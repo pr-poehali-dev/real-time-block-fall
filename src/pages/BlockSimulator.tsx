@@ -15,6 +15,7 @@ export default function BlockSimulator() {
   const [graphicsQuality, setGraphicsQuality] = useState(0.7);
   const [showSettings, setShowSettings] = useState(true);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const animationRef = useRef<number | null>(null);
   const { toast } = useToast();
   
   // Обновление свойств выбранного блока
@@ -41,7 +42,7 @@ export default function BlockSimulator() {
     setSimulationRunning(true);
     setShowSettings(false);
     
-    // В реальном приложении здесь будет инициализация физического движка
+    // Инициализация физического движка
     setTimeout(() => {
       initPhysicsSimulation();
     }, 100);
@@ -49,6 +50,11 @@ export default function BlockSimulator() {
   
   // Сброс симуляции
   const resetSimulation = () => {
+    if (animationRef.current) {
+      cancelAnimationFrame(animationRef.current);
+      animationRef.current = null;
+    }
+    
     setSimulationRunning(false);
     setShowSettings(true);
     
@@ -74,7 +80,7 @@ export default function BlockSimulator() {
     canvas.height = canvas.clientHeight;
     
     // Начальные параметры для блока
-    const blockSize = 50;
+    const blockSize = Math.min(canvas.width, canvas.height) * 0.1; // 10% от меньшей стороны
     const blockX = canvas.width / 2 - blockSize / 2;
     const blockY = 0; // Начальная позиция вверху
     
@@ -91,6 +97,8 @@ export default function BlockSimulator() {
     let velocityX = 0;
     let isFragmented = false;
     let fragments: { x: number, y: number, size: number, vx: number, vy: number }[] = [];
+    
+    console.log("Simulation started", { blockSize, canvas, blockX, blockY });
     
     // Анимация падения
     const animate = () => {
@@ -183,6 +191,7 @@ export default function BlockSimulator() {
         
         // Отображение иконки
         ctx.font = `${blockSize/2}px Arial`;
+        ctx.fillStyle = "white";
         ctx.fillText(selectedBlock.icon, blockXPos + blockSize/4, blockYPos + blockSize*0.7);
         
       } else {
@@ -213,12 +222,12 @@ export default function BlockSimulator() {
       
       // Продолжаем анимацию, если симуляция запущена
       if (simulationRunning) {
-        requestAnimationFrame(animate);
+        animationRef.current = requestAnimationFrame(animate);
       }
     };
     
     // Запуск анимации
-    animate();
+    animationRef.current = requestAnimationFrame(animate);
   };
   
   // Получить цвет блока по его типу
@@ -238,12 +247,23 @@ export default function BlockSimulator() {
       if (canvasRef.current) {
         canvasRef.current.width = canvasRef.current.clientWidth;
         canvasRef.current.height = canvasRef.current.clientHeight;
+        
+        if (simulationRunning) {
+          // Перезапускаем симуляцию при изменении размера
+          resetSimulation();
+          startSimulation();
+        }
       }
     };
     
     window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+      }
+    };
+  }, [simulationRunning]);
 
   return (
     <div className="container mx-auto p-4 min-h-screen flex flex-col">
