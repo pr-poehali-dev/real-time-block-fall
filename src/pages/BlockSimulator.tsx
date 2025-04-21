@@ -39,13 +39,33 @@ export default function BlockSimulator() {
       return;
     }
     
+    // Остановить предыдущую анимацию, если она запущена
+    if (animationRef.current) {
+      cancelAnimationFrame(animationRef.current);
+      animationRef.current = null;
+    }
+    
     setSimulationRunning(true);
     setShowSettings(false);
     
-    // Инициализация физического движка
-    setTimeout(() => {
+    // Настройка canvas
+    if (canvasRef.current) {
+      const canvas = canvasRef.current;
+      canvas.width = canvas.clientWidth;
+      canvas.height = canvas.clientHeight;
+      
+      // Явная очистка canvas
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+      }
+    }
+    
+    // Обязательно инициализировать физику в следующем кадре
+    requestAnimationFrame(() => {
+      console.log("Initializing physics simulation...");
       initPhysicsSimulation();
-    }, 100);
+    });
   };
   
   // Сброс симуляции
@@ -69,20 +89,28 @@ export default function BlockSimulator() {
   
   // Инициализация физической симуляции
   const initPhysicsSimulation = () => {
-    if (!canvasRef.current || !selectedBlock) return;
+    if (!canvasRef.current || !selectedBlock) {
+      console.error("Canvas ref or selected block is missing");
+      return;
+    }
     
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    if (!ctx) {
+      console.error("Could not get 2D context from canvas");
+      return;
+    }
     
     // Настройка размеров канваса по размеру контейнера
     canvas.width = canvas.clientWidth;
     canvas.height = canvas.clientHeight;
     
+    console.log("Canvas dimensions:", canvas.width, canvas.height);
+    
     // Начальные параметры для блока
-    const blockSize = Math.min(canvas.width, canvas.height) * 0.1; // 10% от меньшей стороны
+    const blockSize = Math.min(canvas.width, canvas.height) * 0.15; // 15% от меньшей стороны
     const blockX = canvas.width / 2 - blockSize / 2;
-    const blockY = 0; // Начальная позиция вверху
+    const blockY = 20; // Начальная позиция вверху
     
     // Физические параметры
     let velocity = 0;
@@ -98,18 +126,37 @@ export default function BlockSimulator() {
     let isFragmented = false;
     let fragments: { x: number, y: number, size: number, vx: number, vy: number }[] = [];
     
-    console.log("Simulation started", { blockSize, canvas, blockX, blockY });
+    console.log("Simulation started", { 
+      blockSize, 
+      blockX, 
+      blockY, 
+      gravity, 
+      bounce, 
+      blockType: selectedBlock.type 
+    });
     
     // Анимация падения
     const animate = () => {
-      if (!simulationRunning) return;
+      if (!canvas || !ctx || !simulationRunning) return;
       
+      // Очистка канваса
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       
       // Если блок еще не разбился
       if (!isFragmented) {
+        // Применяем гравитацию
         velocity += gravity;
         blockYPos += velocity;
+        blockXPos += velocityX;
+        
+        // Отскок от стен
+        if (blockXPos < 0) {
+          blockXPos = 0;
+          velocityX = Math.abs(velocityX) * bounce;
+        } else if (blockXPos + blockSize > canvas.width) {
+          blockXPos = canvas.width - blockSize;
+          velocityX = -Math.abs(velocityX) * bounce;
+        }
         
         // Отскок от дна
         if (blockYPos + blockSize > canvas.height) {
@@ -139,11 +186,11 @@ export default function BlockSimulator() {
         // Отрисовка блока в зависимости от типа
         switch (selectedBlock.type) {
           case "solid":
-            ctx.fillStyle = getBockColor(selectedBlock);
+            ctx.fillStyle = getBlockColor(selectedBlock);
             ctx.fillRect(blockXPos, blockYPos, blockSize, blockSize);
             break;
           case "liquid":
-            ctx.fillStyle = getBockColor(selectedBlock);
+            ctx.fillStyle = getBlockColor(selectedBlock);
             ctx.beginPath();
             ctx.arc(blockXPos + blockSize/2, blockYPos + blockSize/2, blockSize/2, 0, Math.PI * 2);
             ctx.fill();
@@ -152,7 +199,7 @@ export default function BlockSimulator() {
             // Визуальный эффект песка/порошка
             const grainSize = 3;
             const grainCount = 50;
-            ctx.fillStyle = getBockColor(selectedBlock);
+            ctx.fillStyle = getBlockColor(selectedBlock);
             for (let i = 0; i < grainCount; i++) {
               const grainX = blockXPos + Math.random() * blockSize;
               const grainY = blockYPos + Math.random() * blockSize;
@@ -163,7 +210,7 @@ export default function BlockSimulator() {
             break;
           case "special":
             // Специальные блоки с уникальным внешним видом
-            ctx.fillStyle = getBockColor(selectedBlock);
+            ctx.fillStyle = getBlockColor(selectedBlock);
             ctx.beginPath();
             const centerX = blockXPos + blockSize/2;
             const centerY = blockYPos + blockSize/2;
@@ -192,7 +239,9 @@ export default function BlockSimulator() {
         // Отображение иконки
         ctx.font = `${blockSize/2}px Arial`;
         ctx.fillStyle = "white";
-        ctx.fillText(selectedBlock.icon, blockXPos + blockSize/4, blockYPos + blockSize*0.7);
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(selectedBlock.icon, blockXPos + blockSize/2, blockYPos + blockSize/2);
         
       } else {
         // Анимация фрагментов
@@ -213,7 +262,7 @@ export default function BlockSimulator() {
           }
           
           // Отрисовка фрагмента
-          ctx.fillStyle = getBockColor(selectedBlock);
+          ctx.fillStyle = getBlockColor(selectedBlock);
           ctx.beginPath();
           ctx.arc(f.x, f.y, f.size, 0, Math.PI * 2);
           ctx.fill();
@@ -227,11 +276,12 @@ export default function BlockSimulator() {
     };
     
     // Запуск анимации
+    animate();
     animationRef.current = requestAnimationFrame(animate);
   };
   
   // Получить цвет блока по его типу
-  const getBockColor = (block: BlockType): string => {
+  const getBlockColor = (block: BlockType): string => {
     switch (block.type) {
       case "solid": return "#3B82F6";  // Синий
       case "liquid": return "#06B6D4"; // Голубой
@@ -257,6 +307,13 @@ export default function BlockSimulator() {
     };
     
     window.addEventListener('resize', handleResize);
+    
+    // Инициализация размера при первой загрузке
+    if (canvasRef.current) {
+      canvasRef.current.width = canvasRef.current.clientWidth;
+      canvasRef.current.height = canvasRef.current.clientHeight;
+    }
+    
     return () => {
       window.removeEventListener('resize', handleResize);
       if (animationRef.current) {
